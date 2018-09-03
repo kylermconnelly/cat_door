@@ -42,7 +42,6 @@ def read_tensor_from_image_file(img_arr, input_mean=0, input_std=255):
     
     float_caster = tf.cast(image_reader, tf.float32)
     dims_expander = tf.expand_dims(float_caster, 0);
-    #resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
     normalized = tf.divide(tf.subtract(dims_expander, [input_mean]), [input_std])
     sess = tf.Session()
     result = sess.run(normalized)
@@ -70,17 +69,10 @@ if __name__ == "__main__":
 
     # create camera instance
     vs = VideoStream(usePiCamera=True, resolution=(width, height)).start()
-    
-    # setup PIR input
-    PIR_input = 2
-    GPIO.setmode(GPIO.BCM) # Broadcom pin-numbering scheme
-    GPIO.setup(PIR_input, GPIO.IN)
 
     file_name = "tf_files/flower_photos/daisy/3475870145_685a19116d.jpg"
     model_file = "tf_files/retrained_graph.pb"
     label_file = "tf_files/retrained_labels.txt"
-    #input_height = 224
-    #input_width = 224
     input_mean = 128
     input_std = 128
     input_layer = "input"
@@ -90,8 +82,6 @@ if __name__ == "__main__":
     parser.add_argument("--image", help="image to be processed")
     parser.add_argument("--graph", help="graph/model to be executed")
     parser.add_argument("--labels", help="name of file containing labels")
-    #parser.add_argument("--input_height", type=int, help="input height")
-    #parser.add_argument("--input_width", type=int, help="input width")
     parser.add_argument("--input_mean", type=int, help="input mean")
     parser.add_argument("--input_std", type=int, help="input std")
     parser.add_argument("--input_layer", help="name of input layer")
@@ -104,10 +94,6 @@ if __name__ == "__main__":
         file_name = args.image
     if args.labels:
         label_file = args.labels
-    #if args.input_height:
-    #    input_height = args.input_height
-    #if args.input_width:
-    #    input_width = args.input_width
     if args.input_mean:
         input_mean = args.input_mean
     if args.input_std:
@@ -120,15 +106,15 @@ if __name__ == "__main__":
     graph = load_graph(model_file)
     labels = load_labels(label_file)
 
-    # lets create a folder for each label to save pictures in
+    # create a folder for each label to save pictures in
     for label in labels:
         os.makedirs(str("Logs/" + log_name + "/" + label), exist_ok = True)
-
-    #
-    # try declaring these as float32's...
-    #
+    
     np_img = np.empty((height, width, 3), dtype=np.uint8)
     np_delta = np.empty((height, width, 3), dtype=np.uint8)
+
+    # array of n arrays (which are sized to be images) to take moving average
+    np_mv_ave = np.empty((10, height, width, 3), dtype=np.uint8)
 
     classCount = 0
 
@@ -143,26 +129,27 @@ if __name__ == "__main__":
     # we use this for clipping images later
     bands = int((width - height)/2)  # how much to leave on each side
     
-    print('Starting PIR sense')
+    mv_ave_idx = 0
+    init_mov_ave = False
     while True:
         np_delta = np_img
         np_img = vs.read()
 
+        np_mv_ave[mv_ave_idx] = np_img
+        curr_move_ave = np.uint8(np_mv_ave.mean(axis=0))
+        
+        mv_ave_idx += 1
+
+        if mv_ave_idx >= 10:
+            mv_ave_idx = 0
+            init_mov_ave = True
+
         # look for changes in image before processing
-        abs_delta = np.abs(np.subtract(rgb2gray(np_img), rgb2gray(np_delta)))
+        abs_delta = np.abs(np.subtract(rgb2gray(np_img), rgb2gray(curr_move_ave)))
         abs_delta[abs_delta < 10] = 0
         ave_delta = np.mean(abs_delta)
-
-        #left = np_img[:,:height,:]
-        #right = np_img[:,-height:,:]
-        #bands = int((width - height)/2)  # how much to leave on each side
-        #center = np_img[:,bands:-bands,:]
-
-        #delt_left = abs_delta[:,:224]
-        #delt_right = abs_delta[:,-224:]
-        
-        if (GPIO.input(PIR_input) == True) or False:
-            print("\nPIR activated")
+            
+        if (ave_delta > 0.1) and init_mov_ave and True:
             print("Ave Delta: ", str(ave_delta))
 
             # now see if motion is left, right, or centered
@@ -170,7 +157,7 @@ if __name__ == "__main__":
             right_delta = np.mean(abs_delta[:,-height:])
 
             print("Left Delta " + str(left_delta) +
-                  ", Right Delta %" + str(right_delta))
+                      ", Right Delta " + str(right_delta))
 
             # now that we have average motion, choose side accordingly
             if left_delta > (right_delta + 0.02):
@@ -184,48 +171,40 @@ if __name__ == "__main__":
                 img_sense = np_img[:,bands:-bands,:]
                 position = "Center"
             
-            if (ave_delta > 0.1) or False:
-                t = read_tensor_from_image_file(img_sense,
-                                                input_mean=input_mean,
-                                                input_std=input_std)
+            t = read_tensor_from_image_file(img_sense,
+                                            input_mean=input_mean,
+                                            input_std=input_std)
                                 
-                with tf.Session(graph=graph) as sess:
-                    start = time.time()
-                    results = sess.run(output_operation.outputs[0],
-                                       {input_operation.outputs[0]: t})
-                    end=time.time()
+            with tf.Session(graph=graph) as sess:
+                start = time.time()
+                results = sess.run(output_operation.outputs[0],
+                                   {input_operation.outputs[0]: t})
+                end=time.time()
                 
-                results = np.squeeze(results)
-                top_k = results.argsort()[-5:][::-1]
+            results = np.squeeze(results)
+            top_k = results.argsort()[-5:][::-1]
 
-                print("Count: ", classCount)
-                print('Evaluation time: {:.3f}s'.format(end-start))
-                for i in top_k:
-                    print(labels[i], results[i])
+            print("Count: ", classCount)
+            print('Evaluation time: {:.3f}s'.format(end-start))
+            for i in top_k:
+                print(labels[i], results[i])
                 
-                # now save classified image in appropriate folder
-                scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
-                                      + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
-                                      str(classCount) + "_" + position + '_capture.jpg'), np_img)
-                scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
-                                      + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
-                                      str(classCount) + "_" + position + '_delta.jpg'), abs_delta)
-                classCount += 1
-        else:
-            # no IR activity, sleep a little
-            time.sleep(0.5)
-
+            # now save classified image in appropriate folder
+            scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
+                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
+                                  str(classCount) + "_" + position + '_capture.jpg'), np_img)
+            scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
+                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
+                                  str(classCount) + "_" + position + '_delta.jpg'), abs_delta)
+            classCount += 1
+            
+        time.sleep(1.0)
         # show image
         cv2.imshow("Live", np_img)
         # show delta image
         cv2.imshow("Delta", abs_delta)
 
-        #cv2.imshow("Left", left)
-        #cv2.imshow("Right", right)
-        #cv2.imshow("Center", center)
-
-        #cv2.imshow("Delta Left", delt_left)
-        #cv2.imshow("Delta Right", delt_right)
+        cv2.imshow("Mov Ave", curr_move_ave)
         
         # grab a key input
         key = cv2.waitKey(1) & 0xFF
@@ -237,6 +216,3 @@ if __name__ == "__main__":
     # cleen up everything
     cv2.destroyAllWindows()
     vs.stop()
-        
-
-            

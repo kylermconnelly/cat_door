@@ -1,6 +1,9 @@
 # cat_door
 Cat door project which recognized which cat (or anything) approaches the door
 
+run with:
+python3 tf_door.py --graph optimized_graph_25_224.pb --labels retrained_labels
+
 Python3 running on Raspberry Pi, significant libraries:
 - Tensorflow, image classification
 - OpenCV, image augmentation and display for debug
