@@ -21,6 +21,9 @@ import cv2
 import imutils
 from imutils.video import VideoStream
 from imutils.video import FPS
+from keras import backend as be
+
+import pygame
 
 def load_graph(model_file):
     graph = tf.Graph()
@@ -33,21 +36,6 @@ def load_graph(model_file):
 
     return graph
 
-def read_tensor_from_image_file(img_arr, input_mean=0, input_std=255):
-    input_name = "file_reader"
-    output_name = "normalized"
-
-    # convert numpy array to tensor
-    image_reader = tf.convert_to_tensor(img_arr, name=input_name)
-    
-    float_caster = tf.cast(image_reader, tf.float32)
-    dims_expander = tf.expand_dims(float_caster, 0);
-    normalized = tf.divide(tf.subtract(dims_expander, [input_mean]), [input_std])
-    sess = tf.Session()
-    result = sess.run(normalized)
-
-    return result
-
 def load_labels(label_file):
     label = []
     proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
@@ -57,6 +45,48 @@ def load_labels(label_file):
 
 def rgb2gray(rgb):
     return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
+
+def read_tensor_from_image_file(img_arr, input_mean=0, input_std=255):
+    input_name = "file_reader"
+    output_name = "normalized"
+
+    # can manually set mean and std here
+    #input_mean = 75
+    #input_std = 54
+
+    # convert numpy array to tensor
+    #image_reader = tf.convert_to_tensor(img_arr, name=input_name)
+
+    sess = tf.Session()
+    
+    float_caster = tf.cast(img_arr, tf.float32)
+    dims_expander = tf.expand_dims(float_caster, 0)
+    normalized = tf.divide(tf.subtract(dims_expander, [input_mean]), [input_std])
+    
+    
+    result = sess.run(normalized)
+    sess.close()
+
+    # each one of the tf.* operations above is adding data to some default graph
+    # calling this clears that graph from memory
+    be.clear_session()
+    
+    return result
+
+def predict_from_image(img_sense, input_mean, input_std, graph):
+    t = read_tensor_from_image_file(img_sense,
+                                    input_mean=input_mean,
+                                    input_std=input_std)
+    
+    sess = tf.Session(graph=graph)
+    results = sess.run(output_operation.outputs[0], {input_operation.outputs[0]: t})
+    sess.close()
+
+    del t
+    
+    results = np.squeeze(results)
+    return results
+        
 
 if __name__ == "__main__":
     # setup logs and folders
@@ -69,39 +99,29 @@ if __name__ == "__main__":
 
     # create camera instance
     vs = VideoStream(usePiCamera=True, resolution=(width, height)).start()
-
-    file_name = "tf_files/flower_photos/daisy/3475870145_685a19116d.jpg"
-    model_file = "tf_files/retrained_graph.pb"
-    label_file = "tf_files/retrained_labels.txt"
+    
+    model_file = "2018_12_05_cat_door.pb" #"tf_files/retrained_graph.pb"
+    label_file = "2018_12_05_retrained_labels.txt" #"tf_files/retrained_labels.txt"
     input_mean = 128
     input_std = 128
     input_layer = "input"
     output_layer = "final_result"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", help="image to be processed")
     parser.add_argument("--graph", help="graph/model to be executed")
     parser.add_argument("--labels", help="name of file containing labels")
     parser.add_argument("--input_mean", type=int, help="input mean")
     parser.add_argument("--input_std", type=int, help="input std")
-    parser.add_argument("--input_layer", help="name of input layer")
-    parser.add_argument("--output_layer", help="name of output layer")
     args = parser.parse_args()
 
     if args.graph:
         model_file = args.graph
-    if args.image:
-        file_name = args.image
     if args.labels:
         label_file = args.labels
     if args.input_mean:
         input_mean = args.input_mean
     if args.input_std:
         input_std = args.input_std
-    if args.input_layer:
-        input_layer = args.input_layer
-    if args.output_layer:
-        output_layer = args.output_layer
 
     graph = load_graph(model_file)
     labels = load_labels(label_file)
@@ -109,35 +129,39 @@ if __name__ == "__main__":
     # create a folder for each label to save pictures in
     for label in labels:
         os.makedirs(str("Logs/" + log_name + "/" + label), exist_ok = True)
-    
-    np_img = np.empty((height, width, 3), dtype=np.uint8)
-    np_delta = np.empty((height, width, 3), dtype=np.uint8)
 
+
+    # declare images in memory
+    np_img = np.empty((height, width, 3), dtype=np.uint8)
     # array of n arrays (which are sized to be images) to take moving average
     np_mv_ave = np.empty((10, height, width, 3), dtype=np.uint8)
-
+    curr_move_ave = np.empty((height, width, 3), dtype=np.uint8)
+    
     classCount = 0
 
     input_name = "import/" + input_layer
     output_name = "import/" + output_layer
     input_operation = graph.get_operation_by_name(input_name);
     output_operation = graph.get_operation_by_name(output_name);
-
-    # create opencv net for comparison
-    #cvNet = cv2.dnn.readNetFromTensorflow(model_file, "tf_files/mobilenet_0.25_224/mobilenet_v1_0.25_224_eval.pbtxt")
-
+    
     # we use this for clipping images later
     bands = int((width - height)/2)  # how much to leave on each side
+
+    # initialize audio player
+    pygame.mixer.init()
     
     mv_ave_idx = 0
     init_mov_ave = False
+
+    # init tf session
+    sess = tf.Session(graph=graph)
+    
     while True:
-        np_delta = np_img
         np_img = vs.read()
 
         np_mv_ave[mv_ave_idx] = np_img
         curr_move_ave = np.uint8(np_mv_ave.mean(axis=0))
-        
+
         mv_ave_idx += 1
 
         if mv_ave_idx >= 10:
@@ -149,15 +173,10 @@ if __name__ == "__main__":
         abs_delta[abs_delta < 10] = 0
         ave_delta = np.mean(abs_delta)
             
-        if (ave_delta > 0.1) and init_mov_ave and True:
-            print("Ave Delta: ", str(ave_delta))
-
+        if ((ave_delta > 3.0) and init_mov_ave) or False:
             # now see if motion is left, right, or centered
             left_delta = np.mean(abs_delta[:,:height])
             right_delta = np.mean(abs_delta[:,-height:])
-
-            print("Left Delta " + str(left_delta) +
-                      ", Right Delta " + str(right_delta))
 
             # now that we have average motion, choose side accordingly
             if left_delta > (right_delta + 0.02):
@@ -170,35 +189,49 @@ if __name__ == "__main__":
                 # not a strong bias towards either side, choose middle
                 img_sense = np_img[:,bands:-bands,:]
                 position = "Center"
+
+            start = time.time()
             
             t = read_tensor_from_image_file(img_sense,
-                                            input_mean=input_mean,
-                                            input_std=input_std)
-                                
-            with tf.Session(graph=graph) as sess:
-                start = time.time()
-                results = sess.run(output_operation.outputs[0],
-                                   {input_operation.outputs[0]: t})
-                end=time.time()
-                
+                                    input_mean=input_mean,
+                                    input_std=input_std)
+
+            results = sess.run(output_operation.outputs[0], {input_operation.outputs[0]: t})
+            
             results = np.squeeze(results)
+
+            end = time.time()
+            
             top_k = results.argsort()[-5:][::-1]
 
+            print("\n"+datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
             print("Count: ", classCount)
-            print('Evaluation time: {:.3f}s'.format(end-start))
-            for i in top_k:
-                print(labels[i], results[i])
+            print("Ave Delta: ", str('%0.1f'%ave_delta))
+            print('Evaluation time: {:.3f}s'.format(end-start) +
+                  " Classification " + labels[top_k[0]])
+            for i in range(len(top_k)):
+                print(labels[i], '%0.2f'%results[i])
                 
             # now save classified image in appropriate folder
             scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
-                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
-                                  str(classCount) + "_" + position + '_capture.jpg'), np_img)
+                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
+                                  str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
+                                  '_capture.jpg'), np_img)
             scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
-                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) + '_' +
-                                  str(classCount) + "_" + position + '_delta.jpg'), abs_delta)
+                                  + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
+                                  str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
+                                  '_delta.jpg'), abs_delta)
             classCount += 1
+
+            # make noise for "pests"
+            if (labels[top_k[0]] == "raccoon" or labels[top_k[0]] == "tchalla") and results[top_k[0]] > 0.9:
+                # let previous playback finish if it hasn't
+                while pygame.mixer.music.get_busy() == True:
+                    continue
+                pygame.mixer.music.load("dog_bark.wav")
+                pygame.mixer.music.play()
             
-        time.sleep(1.0)
+        time.sleep(0.2)
         # show image
         cv2.imshow("Live", np_img)
         # show delta image
