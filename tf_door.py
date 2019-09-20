@@ -25,6 +25,14 @@ from keras import backend as be
 
 import pygame
 
+import board
+import neopixel
+import threading
+
+import twitter
+
+import moviepy.editor as mpy
+
 def load_graph(model_file):
     graph = tf.Graph()
     graph_def = tf.GraphDef()
@@ -86,22 +94,172 @@ def predict_from_image(img_sense, input_mean, input_std, graph):
     
     results = np.squeeze(results)
     return results
-        
 
-if __name__ == "__main__":
+# neo pixel animation
+pix_pin = board.D21
+pix_num = 8
+pix_ord = neopixel.GRBW
+
+pix = neopixel.NeoPixel(pix_pin, pix_num, brightness = 1.0,
+                        auto_write = True, pixel_order = pix_ord)
+
+def wheel(pos):
+    # Input a value 0 to 255 to get a color value.
+    # The colours are a transition r - g - b - back to r.
+    if pos < 0 or pos > 255:
+        r = g = b = 0
+    elif pos < 85:
+        r = int(pos * 3)
+        g = int(255 - pos*3)
+        b = 0
+    elif pos < 170:
+        pos -= 85
+        r = int(255 - pos*3)
+        g = 0
+        b = int(pos*3)
+    else:
+        pos -= 170
+        r = 0
+        g = int(pos*3)
+        b = int(255 - pos*3)
+    return (r, g, b) if pix_ord == neopixel.RGB or pix_ord == neopixel.GRB else (r, g, b, 0)
+ 
+ 
+def rainbow_cycle(wait):
+    for j in range(255):
+        for i in range(pix_num):
+            pixel_index = (i * 256 // pix_num) + j
+            pix[i] = wheel(pixel_index & 255)
+        pix.show()
+        time.sleep(wait)
+
+global ledSt, idleLED, binglyLED, unknownLED, deterLED
+
+idleLED = 0
+binglyLED = 1
+unknownLED = 2
+deterLED = 3
+ledSt = idleLED
+
+exiting = False
+
+def ledManager():
+    global ledSt, idleLED, binglyLED, unknownLED, deterLED, exiting
+    idxScale = 10
+    idxMax = pix_num * idxScale
+    idx = 0
+    while True:
+        if exiting == True:
+            pix.fill((0, 0, 0, 0))
+            break
+        if ledSt == idleLED:
+            if idx%idxScale == 0:
+                pix.fill((0, 0, 0, 0))
+                pix[int(idx/idxScale)] = (1, 0, 0, 0)
+            
+        elif ledSt == binglyLED:
+            for i in range(pix_num):
+                time.sleep(0.02)
+                pix.fill((0, 0, 0, 0))
+                pix[i] = (1, 0, 0, 0)
+            ledSt = idleLED
+            idx = idxMax
+            
+        elif ledSt == unknownLED:
+            for i in range(pix_num):
+                time.sleep(0.02)
+                pix.fill((0, 0, 0, 0))
+                pix[pix_num-i-1] = (1, 0, 0, 0)
+            ledSt = idleLED
+            idx = idxMax
+            
+        elif ledSt == deterLED:
+            for i in range(4):
+                pix.fill((0, 0, 0, 0))
+                pix.fill((255, 0, 0, 0))
+                time.sleep(0.1)
+                pix.fill((0, 0, 0, 0))
+                pix.fill((0, 255, 0, 0))
+                time.sleep(0.1)
+                pix.fill((0, 0, 0, 0))
+                pix.fill((0, 0, 255, 0))
+                time.sleep(0.1)
+                pix.fill((0, 0, 0, 0))
+                pix.fill((0, 0, 0, 255))
+                time.sleep(0.1)
+            
+            #for i in range(4):
+            #    pix.fill((0, 0, 0, 0))
+            #    pix.fill((255, 0, 0, 0))
+            #rainbow_cycle(0.001)
+            #for i in range(pix_num):
+            #    time.sleep(0.02)
+            #    pix.fill((0, 0, 0, 0))
+            #    pix[i] = (0, 0, 255, 0)
+            ledSt = idleLED
+            idx = idxMax
+            
+        idx += 1
+        if idx >= idxMax:
+            idx = 0
+        time.sleep(0.1)
+
+vs = 0
+gettingImg = False
+def getImage():
+    global vs, gettingImg
+    
+    while gettingImg == True:
+        time.sleep(0.01)
+        
+    gettingImg = True
+    img =  vs.read()
+    gettingImg = False
+    return img
+    
+
+gif_list = []
+num_gif_pics = 20
+def gifManager():
+    global exiting, gif_list, num_gif_pics
+
+    while len(gif_list) < num_gif_pics:
+        gif_list.append(getImage())
+        
+    while True:
+        if exiting == True:
+            break
+        # add new image
+        gif_list.append(getImage())
+        # remove oldest
+        gif_list.pop(0)
+        time.sleep(0.1)
+
+def main():
+    global exiting, gif_list, vs, ledSt, idleLED, binglyLED, unknownLED, deterLED
+    # start LED thread
+    ledThread = threading.Thread(target = ledManager)
+    ledThread.start()
+    
     # setup logs and folders
     os.makedirs("Logs", exist_ok = True)
     log_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     os.makedirs(str("Logs/" + log_name), exist_ok = True)
+
+    os.makedirs("gifs", exist_ok = True)
 
     width = 304
     height = 224
 
     # create camera instance
     vs = VideoStream(usePiCamera=True, resolution=(width, height)).start()
+
+    # start GIF thread
+    gifThread = threading.Thread(target = gifManager)
+    gifThread.start()
     
-    model_file = "2018_12_05_cat_door.pb" #"tf_files/retrained_graph.pb"
-    label_file = "2018_12_05_retrained_labels.txt" #"tf_files/retrained_labels.txt"
+    model_file = "2019_06_23_mobilenet_1_0_224.pb" #"tf_files/retrained_graph.pb"
+    label_file = "2019_06_23_mobilenet_1_0_224_labels.txt" #"tf_files/retrained_labels.txt"
     input_mean = 128
     input_std = 128
     input_layer = "input"
@@ -155,9 +313,21 @@ if __name__ == "__main__":
 
     # init tf session
     sess = tf.Session(graph=graph)
+
+    # create twitter object and authenticate
+    f = open("twtrKeys.txt", "r")
+
+    api = twitter.Api(consumer_key=str(f.readline().strip()),
+                      consumer_secret=str(f.readline().strip()),
+                      access_token_key=str(f.readline().strip()),
+                      access_token_secret=str(f.readline().strip()))
+
+    status = api.PostUpdate(datetime.now().strftime("%Y/%m/%d %H:%M:%S")+' Cat door is up!')
+    print(status.text)
+    timeSinceTweet = time.time()
     
     while True:
-        np_img = vs.read()
+        np_img = getImage() #vs.read()
 
         np_mv_ave[mv_ave_idx] = np_img
         curr_move_ave = np.uint8(np_mv_ave.mean(axis=0))
@@ -173,7 +343,7 @@ if __name__ == "__main__":
         abs_delta[abs_delta < 10] = 0
         ave_delta = np.mean(abs_delta)
             
-        if ((ave_delta > 3.0) and init_mov_ave) or False:
+        if ((ave_delta > 2.0) and init_mov_ave) or False:
             # now see if motion is left, right, or centered
             left_delta = np.mean(abs_delta[:,:height])
             right_delta = np.mean(abs_delta[:,-height:])
@@ -213,23 +383,50 @@ if __name__ == "__main__":
                 print(labels[i], '%0.2f'%results[i])
                 
             # now save classified image in appropriate folder
-            scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
+            captureFileName = str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
                                   + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
                                   str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
-                                  '_capture.jpg'), np_img)
+                                  '_capture.jpg')
+            scipy.misc.imsave(captureFileName, np_img)
             scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
                                   + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
                                   str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
                                   '_delta.jpg'), abs_delta)
             classCount += 1
-
+            
             # make noise for "pests"
-            if (labels[top_k[0]] == "raccoon" or labels[top_k[0]] == "tchalla") and results[top_k[0]] > 0.9:
+            if (labels[top_k[0]] == "raccoon" or labels[top_k[0]] == "tchalla") and results[top_k[0]] > 0.9 or False:
                 # let previous playback finish if it hasn't
                 while pygame.mixer.music.get_busy() == True:
                     continue
+                ledSt = deterLED
                 pygame.mixer.music.load("dog_bark.wav")
                 pygame.mixer.music.play()
+            elif labels[top_k[0]] == "bingly":
+                ledSt = binglyLED
+            elif labels[top_k[0]] == "unknown":
+                ledSt = unknownLED
+
+            # tweet latest development if we are sure of result
+            if results[top_k[0]] > 0.9 and labels[top_k[0]] != "unknown" or False:
+                # only tweet every n seconds
+                if time.time() > (timeSinceTweet + 10):
+                    time.sleep(1.0) # sleep a bit so gif get before and after
+                    fps = 11
+                    temp = gif_list
+                    clip = mpy.ImageSequenceClip(temp, fps=fps)
+                    gif_fname = str('gifs/' + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '.gif')
+                    clip.write_gif(gif_fname, fps=fps)
+                    
+                    timeSinceTweet = time.time()
+                    try:
+                        status = api.PostUpdate('%2.1f%% '%(100*results[top_k[0]]) + labels[top_k[0]]  +
+                                                ' at door? ' + datetime.now().strftime("%Y/%m/%d %H:%M:%S"),
+                                                media = gif_fname)
+                        #captureFileName
+                        print(status.text)
+                    except:
+                        print("Failed to tweet")
             
         time.sleep(0.2)
         # show image
@@ -243,9 +440,13 @@ if __name__ == "__main__":
         key = cv2.waitKey(1) & 0xFF
         # check if we are to exit, clean exit
         if key == ord("q"):
+            exiting = True
             print("Exiting program")
             break
         
     # cleen up everything
     cv2.destroyAllWindows()
     vs.stop()
+    
+if __name__ == "__main__":
+    main()
