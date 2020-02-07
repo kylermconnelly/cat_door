@@ -252,7 +252,7 @@ def main():
     height = 224
 
     # create camera instance
-    vs = VideoStream(usePiCamera=True, resolution=(width, height)).start()
+    vs = VideoStream(usePiCamera=True, resolution=(width*2, height*2)).start()
 
     # start GIF thread
     gifThread = threading.Thread(target = gifManager)
@@ -324,10 +324,13 @@ def main():
 
     status = api.PostUpdate(datetime.now().strftime("%Y/%m/%d %H:%M:%S")+' Cat door is up!')
     print(status.text)
+    
     timeSinceTweet = time.time()
+    timeSinceTweetCkeckin = time.time()
+    tweetNext = True
     
     while True:
-        np_img = getImage() #vs.read()
+        np_img = cv2.resize(getImage(), dsize=(width, height), interpolation=cv2.INTER_CUBIC)
 
         np_mv_ave[mv_ave_idx] = np_img
         curr_move_ave = np.uint8(np_mv_ave.mean(axis=0))
@@ -343,7 +346,7 @@ def main():
         abs_delta[abs_delta < 10] = 0
         ave_delta = np.mean(abs_delta)
             
-        if ((ave_delta > 2.0) and init_mov_ave) or False:
+        if ((ave_delta > 2.0) and init_mov_ave) or (tweetNext == True) or False:
             # now see if motion is left, right, or centered
             left_delta = np.mean(abs_delta[:,:height])
             right_delta = np.mean(abs_delta[:,-height:])
@@ -408,9 +411,10 @@ def main():
                 ledSt = unknownLED
 
             # tweet latest development if we are sure of result
-            if results[top_k[0]] > 0.9 and labels[top_k[0]] != "unknown" or False:
+            if (results[top_k[0]] > 0.9 and labels[top_k[0]] != "unknown") or (tweetNext == True) or False:
                 # only tweet every n seconds
                 if time.time() > (timeSinceTweet + 10):
+                    tweetNext = False
                     time.sleep(1.0) # sleep a bit so gif get before and after
                     fps = 11
                     temp = gif_list
