@@ -32,6 +32,7 @@ import threading
 import twitter
 
 import moviepy.editor as mpy
+import imageio
 
 def load_graph(model_file):
     graph = tf.Graph()
@@ -390,8 +391,8 @@ def main():
                                   + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
                                   str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
                                   '_capture.jpg')
-            scipy.misc.imsave(captureFileName, np_img)
-            scipy.misc.imsave(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
+            imageio.imwrite(captureFileName, np_img)
+            imageio.imwrite(str("Logs/" + log_name + "/" + labels[top_k[0]] + '/'
                                   + labels[top_k[0]] + '_%2.1f%%'%(100*results[top_k[0]]) +
                                   str('_%0.1f_'%ave_delta) + str(classCount) + "_" + position +
                                   '_delta.jpg'), abs_delta)
