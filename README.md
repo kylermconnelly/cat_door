@@ -20,8 +20,7 @@ Idle view during day, almost identical to moving average
 
 Subject enters field of view
 
-<img src="images/in_image.jpg" width="378" height="504">
-<img src="images/mv_ave.jpg" width="378" height="504">
+<img src="images/in_image.jpg" width="378" height="504"> <img src="images/mv_ave.jpg" width="378" height="504">
 
 Moving average starts to change
 
