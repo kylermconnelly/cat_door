@@ -15,23 +15,24 @@ To run program a trained model and corresponding labels file must be provided
 Basic opperation:
 
 Idle view during day, almost identical to moving average
-![Idle View](images/blank.jpg)
+
+![Idle View](images/blank.jpg){:height="20%" width="20%"}
 
 Subject enters field of view
 
-![Bingly Enters](https://github.com/kylermconnelly/cat_door/images/in_image.jpg)
+![Bingly Enters](images/in_image.jpg){:height="40%" width="40%"}
 
 Moving average starts to change
 
-![Moving Average](https://github.com/kylermconnelly/cat_door/images/mv_ave.jpg)
+![Moving Average](images/mv_ave.jpg){:height="60%" width="60%"}
 
 Delta of latest image and moving average
 
-![Delta](https://github.com/kylermconnelly/cat_door/images/delta.jpg)
+![Delta](images/delta.jpg){:height="80%" width="80%"}
 
 After high certainty prediction, gif created and tweeted
 
-![Tweet Gif](https://github.com/kylermconnelly/cat_door/images/tweet_gif.jpg)
+![Tweet Gif](images/tweet_gif.jpg){:height="10%" width="10%"}
 
 - When the PIR motion sensor activates, software senses the activation on a GPIO
 - Software continually captures images and compares sequencial images to sense motion
