@@ -16,23 +16,25 @@ Basic opperation:
 
 Idle view during day, almost identical to moving average
 
-![Idle View](images/blank.jpg){:height="20%" width="20%"}
+![Idle View](images/blank.jpg)
+
+<img src="images/blank.jpg" width="756" height="1008">
 
 Subject enters field of view
 
-![Bingly Enters](images/in_image.jpg){:height="40%" width="40%"}
+![Bingly Enters](images/in_image.jpg)
 
 Moving average starts to change
 
-![Moving Average](images/mv_ave.jpg){:height="60%" width="60%"}
+![Moving Average](images/mv_ave.jpg)
 
 Delta of latest image and moving average
 
-![Delta](images/delta.jpg){:height="80%" width="80%"}
+![Delta](images/delta.jpg)
 
 After high certainty prediction, gif created and tweeted
 
-![Tweet Gif](images/tweet_gif.jpg){:height="10%" width="10%"}
+![Tweet Gif](images/tweet_gif.jpg)
 
 - When the PIR motion sensor activates, software senses the activation on a GPIO
 - Software continually captures images and compares sequencial images to sense motion
