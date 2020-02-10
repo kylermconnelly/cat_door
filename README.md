@@ -15,7 +15,7 @@ To run program a trained model and corresponding labels file must be provided
 Basic opperation:
 
 Idle view during day, almost identical to moving average
-![Idle View](https://github.com/kylermconnelly/cat_door/images/blank.jpg)
+![Idle View](https://kylermconnelly.github.com/images/blank.jpg)
 
 Subject enters field of view
 
