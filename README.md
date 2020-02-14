@@ -1,37 +1,38 @@
 # cat_door
 Cat door project which recognized which cat (or anything) approaches the door
 
-run with:
-python3 tf_door.py --graph optimized_graph_25_224.pb --labels retrained_labels
+Basic operation:
 
-Python3 running on Raspberry Pi, significant libraries:
-- Tensorflow, image classification
-- OpenCV, image augmentation and display for debug
-	- Big thanks to Adrian Rosebrock for prividing excellent instructions for install OpenCV on a RPi, tutorial here:
-		https://www.pyimagesearch.com/2017/09/04/raspbian-stretch-install-opencv-3-python-on-your-raspberry-pi/
+When the camera detects motion in the field of view it will capture a picture and input it into a trained TensorFlow model which will classify the image.
+The output is used in multiple ways. One use is if the classification is some sort of pest, such as a raccoon or any neighbor cat which the model has trained on, there is a speaker and NeoPixel LEDs which can be activated to scare them from coming inside.
+If the classification is anything of interest, (not 'unknown') and above some threshold probability, a gif of the event will be tweeted. There is a separate thread which maintains a series of pictures which can be used to create a gif.
 
-To run program a trained model and corresponding labels file must be provided
+The Python code runs on a Raspberry Pi 4 with 2GB of RAM. It was difficult to stop all the memory leaks and after a few weeks it would crash, however that appears to be resolved and it can run for months now.
+On the RPi 4 classification takes about 0.5 seconds with an input image of 244x244 color, and Mobilenet 1.0 model. When first starting the project, I was under the impression that the model input must be a square image, I now know that is not the case, it can be any shape.
+However I had already setup the code to detect if the area of interest was on the left, center or right of image, then crop that portion of the image for the classifier. I left that functionality because it does actually save some processing to reduce the input image for 304x224 to 224x224.
 
-Basic opperation:
-- When the PIR motion sensor activates, software senses the activation on a GPIO
-- Software continually captures images and compares sequencial images to sense motion
-- Since camera sensing element is wider than it is tall, software compares images to tell if motion occured on left side, right side, or center
-- When both the PIR sensor and image based motion sense indicate there is some motion in front of the door:
-	- Software creates square image from Left, Center, or Right of frame, using 224x224, camera initialized using 224 as height and width propertional to camera aspect ratio
-	- Software takes the latest square image capture and inputs it into the trained convolutional neural network
-- Software saves classified image in log directory with predicted label, probability, and position in frame of motion
+The camera is placed right above the door and has a fisheye lens to capture any door traffic. Software maintains a moving average image and compares it to the latest image to detect movement.
+Below is a typical view from the door during the day:
 
-In practice on RPi 3B+:
-- Image classification takes about 1 second, depending on model complexity, in this case I used mobilenet_0.25_224
-	- When retraining often validation score gets to or approches 100%
-- When idling (capturing images to compare and sensing PIR every 0.5secs) CPU runs at ~8%, running raspbian 9, stretch
-- After retraining twice with a total of about 300 images model almost always correct, when choosing between 3 different labels, two cats and unknown
-- Can retrain model on RPi, takes a few minutes, but obviously much faster on a standard PC
-- Can get a lot of false motion activations, when sunlight is shining through trees and wind blows, PIR activates, and as auto brightness of camera operates image based motion sense activates
-- Camera is IR sensative so it can operate at night, so the sunlight can be intense at certain time of day but it is still able to see and classify correctly when cats approach
+<img src="images/idle.jpg" width="304" height="224">
 
-TODO:
-- Add power supply current sense
-- Run on headless linux to compare power usage
-- Add mean and std deviation normalization to image classification, currently using default values not derived from training set
-- Try less complex CNN and see if accuracy acceptable, would deliver faster classification times
+As the subject enters the field of view the total sum delta from the moving average exceeds some threshold and an image is captured.
+
+Below is an image of my cat and the delta image as he approaches the door:
+
+<img src="images/bingly_day_cap.jpg" width="304" height="224"> <img src="images/bingly_day_delta.jpg" width="304" height="224">
+
+The Camera is IR sensitive and has IR LEDS so works at night as well, the model was trained with both night and day images:
+
+<img src="images/bingly_night_cap.jpg" width="304" height="224"> <img src="images/bingly_night_delta.jpg" width="304" height="224">
+
+The model has not been trained on squirrels, so it does not really know what to make of them.
+Usually labels as unknown or my cat with a low probability. All the images taken when motion is captured are logged to the RPi so periodically I sort all the data and retrain a new model.
+
+<img src="images/squirrel_L_cap.jpg" width="304" height="224"> <img src="images/squirrel_L_delta.jpg" width="304" height="224">
+
+<img src="images/squirrel_R_cap.jpg" width="304" height="224"> <img src="images/squirrel_R_delta.jpg" width="304" height="224">
+
+If the classification is not unknown and above 90% probability, the series of images are turned into a gif and tweeted.
+
+<img src="images/2020_02_13_15_41_38.gif" width="304" height="224"> <img src="images/tweet.png" width="304" height="224">
