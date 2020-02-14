@@ -32,7 +32,7 @@ Delta of latest image and moving average
 
 After high certainty prediction, gif created and tweeted
 
-<img src="images/tweet_gif.jpg" width="378" height="504">
+<img src="images/2020_02_13_14_08_29.gif" width="378" height="504">
 
 - When the PIR motion sensor activates, software senses the activation on a GPIO
 - Software continually captures images and compares sequencial images to sense motion
